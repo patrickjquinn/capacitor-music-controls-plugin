@@ -1,6 +1,6 @@
 {
   "name": "@whiskeredaxe/capacitor-music-controls-plugin",
-  "version": "6.0.0",
+  "version": "6.0.6",
   "description": "Implementation of MusicControls for Capacitor 6+ projects",
   "main": "dist/plugin.cjs.js",
   "type": "module",
@@ -9,6 +9,10 @@
   "unpkg": "dist/plugin.js",
   "author": "Ingage",
   "license": "MIT",
+  "files": [
+    "dist",
+    "CapacitorMusicControlsPlugin.podspec"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/patrickjquinn/capacitor-music-controls-plugin"

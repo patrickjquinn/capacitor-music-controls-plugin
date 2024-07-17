@@ -6,7 +6,6 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
@@ -44,7 +43,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
-@CapacitorPlugin(name="CapacitorMusicControls")
+@CapacitorPlugin(name = "CapacitorMusicControls")
 public class CapacitorMusicControls extends Plugin {
 
 	private static final String TAG = "CapacitorMusicControls";
@@ -52,98 +51,85 @@ public class CapacitorMusicControls extends Plugin {
 	private MusicControlsBroadcastReceiver mMessageReceiver;
 	private MusicControlsNotification notification;
 	private MediaSessionCompat mediaSessionCompat;
-	private final int notificationID=7824;
+	private final int notificationID = 7824;
 	private AudioManager mAudioManager;
 	private PendingIntent mediaButtonPendingIntent;
-	private boolean mediaButtonAccess=true;
+	private boolean mediaButtonAccess = true;
 	private android.media.session.MediaSession.Token token;
 	private MusicControlsServiceConnection mConnection;
 
-
 	private MediaSessionCallback mMediaSessionCallback = new MediaSessionCallback(this);
 
-
 	@PluginMethod()
-    public void create(PluginCall call) {
+	public void create(PluginCall call) {
+		JSObject options = call.getData();
+		Context context = getActivity().getApplicationContext();
+		Activity activity = getActivity();
 
-			JSObject options = call.getData();
+		initialize();
 
-			final Context context=getActivity().getApplicationContext();
-			final Activity activity = getActivity();
+		try {
+			MusicControlsInfos infos = new MusicControlsInfos(options);
+			MediaMetadataCompat.Builder metadataBuilder = new MediaMetadataCompat.Builder();
 
-			initialize();
+			notification.updateNotification(infos);
 
-			try{
+			// Track title
+			metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_TITLE, infos.track);
+			// Artists
+			metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, infos.artist);
+			// Album
+			metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM, infos.album);
 
-				final MusicControlsInfos infos = new MusicControlsInfos(options);
-
-				final MediaMetadataCompat.Builder metadataBuilder = new MediaMetadataCompat.Builder();
-
-				notification.updateNotification(infos);
-
-				// track title
-				metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_TITLE, infos.track);
-				// artists
-				metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, infos.artist);
-				//album
-				metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM, infos.album);
-
-				Bitmap art = getBitmapCover(infos.cover);
-				if(art != null){
-					metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, art);
-					metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, art);
-
-				}
-
-				mediaSessionCompat.setMetadata(metadataBuilder.build());
-
-				if(infos.isPlaying)
-					setMediaPlaybackState(PlaybackStateCompat.STATE_PLAYING);
-				else
-					setMediaPlaybackState(PlaybackStateCompat.STATE_PAUSED);
-
-				call.resolve();
-
-			} catch(JSONException e){
-				call.reject("error in initializing MusicControlsInfos "+e.toString());
-
+			Bitmap art = getBitmapCover(infos.cover);
+			if (art != null) {
+				metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, art);
+				metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, art);
 			}
 
-    }
+			mediaSessionCompat.setMetadata(metadataBuilder.build());
 
+			if (infos.isPlaying)
+				setMediaPlaybackState(PlaybackStateCompat.STATE_PLAYING);
+			else
+				setMediaPlaybackState(PlaybackStateCompat.STATE_PAUSED);
 
+			call.resolve();
+		} catch (JSONException e) {
+			call.reject("error in initializing MusicControlsInfos " + e.toString());
+		}
+	}
 
-	private void registerBroadcaster(MusicControlsBroadcastReceiver mMessageReceiver){
-		final Context context = getActivity().getApplicationContext();
-		context.registerReceiver((BroadcastReceiver)mMessageReceiver, new IntentFilter("music-controls-previous"));
-		context.registerReceiver((BroadcastReceiver)mMessageReceiver, new IntentFilter("music-controls-pause"));
-		context.registerReceiver((BroadcastReceiver)mMessageReceiver, new IntentFilter("music-controls-play"));
-		context.registerReceiver((BroadcastReceiver)mMessageReceiver, new IntentFilter("music-controls-next"));
-		context.registerReceiver((BroadcastReceiver)mMessageReceiver, new IntentFilter("music-controls-media-button"));
-		context.registerReceiver((BroadcastReceiver)mMessageReceiver, new IntentFilter("music-controls-destroy"));
+	private void registerBroadcaster(MusicControlsBroadcastReceiver mMessageReceiver) {
+		Context context = getActivity().getApplicationContext();
+		IntentFilter filter = new IntentFilter();
+		filter.addAction("music-controls-previous");
+		filter.addAction("music-controls-pause");
+		filter.addAction("music-controls-play");
+		filter.addAction("music-controls-next");
+		filter.addAction("music-controls-media-button");
+		filter.addAction("music-controls-destroy");
+		filter.addAction(Intent.ACTION_HEADSET_PLUG);
+		filter.addAction(android.bluetooth.BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED);
 
-		// Listen for headset plug/unplug
-		context.registerReceiver((BroadcastReceiver)mMessageReceiver, new IntentFilter(Intent.ACTION_HEADSET_PLUG));
-
-			// Listen for bluetooth connection state changes
-		context.registerReceiver((BroadcastReceiver)mMessageReceiver, new IntentFilter(android.bluetooth.BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED));
+		context.registerReceiver(mMessageReceiver, filter);
 	}
 
 	// Register pendingIntent for broacast
-	public void registerMediaButtonEvent(){
+	public void registerMediaButtonEvent() {
 		if (this.mediaSessionCompat != null) {
 			this.mediaSessionCompat.setMediaButtonReceiver(this.mediaButtonPendingIntent);
 		}
 	}
 
-	public void unregisterMediaButtonEvent(){
+	public void unregisterMediaButtonEvent() {
 		if (this.mediaSessionCompat != null) {
 			this.mediaSessionCompat.setMediaButtonReceiver(null);
 			this.mediaSessionCompat.release();
 		}
 	}
 
-	public void destroyPlayerNotification(){
+	public void destroyPlayerNotification() {
 		if (this.notification != null) {
 			try {
 				this.notification.destroy();
@@ -154,42 +140,27 @@ public class CapacitorMusicControls extends Plugin {
 		}
 	}
 
-
-
-
 	public void initialize() {
+		final Activity activity = getActivity();
+		final Context context = activity.getApplicationContext();
 
-		final Activity activity=getActivity();
-
-		final Context context=activity.getApplicationContext();
-
-		final MusicControlsServiceConnection mConnection = new MusicControlsServiceConnection(activity);
-		this.mConnection = mConnection;
-
-
-		// avoid spawning multiple receivers
-		if(this.mMessageReceiver != null){
-
-			try{
-
+		// Avoid spawning multiple receivers
+		if (this.mMessageReceiver != null) {
+			try {
 				context.unregisterReceiver(this.mMessageReceiver);
-
-			} catch(IllegalArgumentException e) {
-
+			} catch (IllegalArgumentException e) {
 				e.printStackTrace();
-
 			}
-
 			unregisterMediaButtonEvent();
-
 		}
-		// end avoid spawn
 
 		this.mMessageReceiver = new MusicControlsBroadcastReceiver(this);
 		this.registerBroadcaster(this.mMessageReceiver);
 
-		this.mediaSessionCompat = new MediaSessionCompat(context, "capacitor-music-controls-media-session", null, this.mediaButtonPendingIntent);
-		this.mediaSessionCompat.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS);
+		this.mediaSessionCompat = new MediaSessionCompat(context, "capacitor-music-controls-media-session", null,
+				this.mediaButtonPendingIntent);
+		this.mediaSessionCompat.setFlags(
+				MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS);
 
 		MediaSessionCompat.Token _token = this.mediaSessionCompat.getSessionToken();
 		this.token = (android.media.session.MediaSession.Token) _token.getToken();
@@ -211,28 +182,25 @@ public class CapacitorMusicControls extends Plugin {
 			}
 		};
 
-
 		// Register media (headset) button event receiver
 		try {
 			this.mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
 			Intent headsetIntent = new Intent("music-controls-media-button");
 			this.mediaButtonPendingIntent = PendingIntent.getBroadcast(
-				context, 0, headsetIntent, 
-				Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE : PendingIntent.FLAG_UPDATE_CURRENT
-			);
+					context, 0, headsetIntent,
+					Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+							? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE
+							: PendingIntent.FLAG_UPDATE_CURRENT);
 			this.registerMediaButtonEvent();
 		} catch (Exception e) {
-			this.mediaButtonAccess=false;
+			this.mediaButtonAccess = false;
 			e.printStackTrace();
 		}
 
 		Intent startServiceIntent = new Intent(activity, MusicControlsNotificationKiller.class);
 		startServiceIntent.putExtra("notificationID", this.notificationID);
 		activity.bindService(startServiceIntent, this.mConnection, Context.BIND_AUTO_CREATE);
-
 	}
-
-
 
 	@PluginMethod()
 	public void destroy(PluginCall call) {
@@ -244,11 +212,9 @@ public class CapacitorMusicControls extends Plugin {
 		this.stopMessageReceiver(context);
 		this.unregisterMediaButtonEvent();
 		this.stopServiceConnection(activity);
-		
-		
+
 		call.resolve();
 	}
-
 
 	protected void handleOnDestroy() {
 
@@ -262,28 +228,18 @@ public class CapacitorMusicControls extends Plugin {
 
 	}
 
-	public void stopMessageReceiver(Context context){
-
-		if(this.mMessageReceiver != null){
-
+	public void stopMessageReceiver(Context context) {
+		if (this.mMessageReceiver != null) {
 			this.mMessageReceiver.stopListening();
-
-			try{
-
+			try {
 				context.unregisterReceiver(this.mMessageReceiver);
-
-			} catch(IllegalArgumentException e) {
-
+			} catch (IllegalArgumentException e) {
 				e.printStackTrace();
-
 			}
-
 		}
-
-		
 	}
 
-	public void stopServiceConnection(Activity activity){
+	public void stopServiceConnection(Activity activity) {
 		if (this.mConnection != null) {
 			Intent stopServiceIntent = new Intent(activity, MusicControlsNotificationKiller.class);
 			activity.unbindService(this.mConnection);
@@ -301,18 +257,18 @@ public class CapacitorMusicControls extends Plugin {
 			return;
 		}
 
-		try{
+		try {
 			final boolean isPlaying = params.getBoolean("isPlaying");
 			this.notification.updateIsPlaying(isPlaying);
 
-			if(isPlaying)
+			if (isPlaying)
 				setMediaPlaybackState(PlaybackStateCompat.STATE_PLAYING);
 			else
 				setMediaPlaybackState(PlaybackStateCompat.STATE_PAUSED);
 
 			call.resolve();
-		} catch(JSONException e){
-			call.reject("error updateIsPlaying: "+e.toString());
+		} catch (JSONException e) {
+			call.reject("error updateIsPlaying: " + e.toString());
 		}
 
 	}
@@ -322,18 +278,18 @@ public class CapacitorMusicControls extends Plugin {
 		JSObject params = call.getData();
 
 		// final JSONObject params = args.getJSONObject(0);
-		try{
+		try {
 			final boolean isPlaying = params.getBoolean("isPlaying");
 			this.notification.updateIsPlaying(isPlaying);
 
-			if(isPlaying)
+			if (isPlaying)
 				setMediaPlaybackState(PlaybackStateCompat.STATE_PLAYING);
 			else
 				setMediaPlaybackState(PlaybackStateCompat.STATE_PAUSED);
 
 			call.resolve();
-		} catch(JSONException e){
-			call.reject("error updateElapsed: "+e.toString());
+		} catch (JSONException e) {
+			call.reject("error updateElapsed: " + e.toString());
 		} catch (NullPointerException e) {
 			e.printStackTrace();
 		}
@@ -344,33 +300,35 @@ public class CapacitorMusicControls extends Plugin {
 	public void updateDismissable(PluginCall call) {
 		JSObject params = call.getData();
 		// final JSONObject params = args.getJSONObject(0);
-		try{
+		try {
 			final boolean dismissable = params.getBoolean("dismissable");
 			this.notification.updateDismissable(dismissable);
-		call.resolve();
-		} catch(JSONException e){
-			call.reject("error updateDismissable: "+e.toString());
+			call.resolve();
+		} catch (JSONException e) {
+			call.reject("error updateDismissable: " + e.toString());
 		}
 
 	}
 
-	public void controlsNotification(JSObject ret){
+	public void controlsNotification(JSObject ret) {
 
-		Log.i(TAG, "controlsNotification fired "  + ret.getString("message"));
+		Log.i(TAG, "controlsNotification fired " + ret.getString("message"));
 		// notifyListeners("controlsNotification", ret);
 		this.bridge.triggerJSEvent("controlsNotification", "document", ret.toString());
 
-  }
+	}
 
 	private void setMediaPlaybackState(int state) {
 		PlaybackStateCompat.Builder playbackstateBuilder = new PlaybackStateCompat.Builder();
-		if( state == PlaybackStateCompat.STATE_PLAYING ) {
-			playbackstateBuilder.setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PAUSE | PlaybackStateCompat.ACTION_SKIP_TO_NEXT | PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS |
+		if (state == PlaybackStateCompat.STATE_PLAYING) {
+			playbackstateBuilder.setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PAUSE
+					| PlaybackStateCompat.ACTION_SKIP_TO_NEXT | PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS |
 					PlaybackStateCompat.ACTION_PLAY_FROM_MEDIA_ID |
 					PlaybackStateCompat.ACTION_PLAY_FROM_SEARCH);
 			playbackstateBuilder.setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f);
 		} else {
-			playbackstateBuilder.setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_SKIP_TO_NEXT | PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS |
+			playbackstateBuilder.setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY
+					| PlaybackStateCompat.ACTION_SKIP_TO_NEXT | PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS |
 					PlaybackStateCompat.ACTION_PLAY_FROM_MEDIA_ID |
 					PlaybackStateCompat.ACTION_PLAY_FROM_SEARCH);
 			playbackstateBuilder.setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 0);
@@ -379,9 +337,9 @@ public class CapacitorMusicControls extends Plugin {
 	}
 
 	// Get image from url
-	private Bitmap getBitmapCover(String coverURL){
-		try{
-			if(coverURL.matches("^(https?|ftp)://.*$"))
+	private Bitmap getBitmapCover(String coverURL) {
+		try {
+			if (coverURL.matches("^(https?|ftp)://.*$"))
 				// Remote image
 				return this.getBitmapFromURL(coverURL);
 			else {
@@ -395,7 +353,7 @@ public class CapacitorMusicControls extends Plugin {
 	}
 
 	// get Local image
-	private Bitmap getBitmapFromLocal(String localURL){
+	private Bitmap getBitmapFromLocal(String localURL) {
 		try {
 			Uri uri = Uri.parse(localURL);
 			File file = new File(uri.getPath());
